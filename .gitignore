@@ -40,3 +40,7 @@ pip-wheel-metadata
 /poetry.toml
 
 poetry/core/*
+venv
+new-venv
+
+.env

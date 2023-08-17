@@ -3,15 +3,22 @@ from os import path
 import importlib.metadata
 from typing import BinaryIO, Union
 
+import json
 import numpy as np
 import ffmpeg
+from io import StringIO
 from fastapi import FastAPI, File, UploadFile, Query, applications
 from fastapi.responses import StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 from whisper import tokenizer
+from .diarize.core import Diarization
 
 ASR_ENGINE = os.getenv("ASR_ENGINE", "openai_whisper")
+HF_KEY = os.getenv("HF_API_KEY", "")
+if not HF_KEY:
+    print("HF key is required in .env under key HF_API_KEY")
+    raise Exception("NO HF_API_KEY in env")
 if ASR_ENGINE == "faster_whisper":
     from .faster_whisper.core import transcribe, language_detection
 else:
@@ -51,6 +58,25 @@ if path.exists(assets_path + "/swagger-ui.css") and path.exists(assets_path + "/
 @app.get("/", response_class=RedirectResponse, include_in_schema=False)
 async def index():
     return "/docs"
+
+
+@app.post("/diarize", tags=["Endpoints"])
+def diarize(
+    audio_file: UploadFile = File(...),
+    encode : bool = Query(default=True, description="Encode audio first through ffmpeg"),
+):
+    result = Diarization(HF_KEY, load_audio(audio_file.file, encode)).process_and_save()
+    outputFile = StringIO()
+    json.dump(result, outputFile)
+    outputFile.seek(0)
+    return StreamingResponse(
+        outputFile, 
+        media_type="text/plain", 
+        headers={
+                'Asr-Engine': ASR_ENGINE,
+                'Content-Disposition': f'attachment; filename="{audio_file.filename}.json"'
+            })
+
 
 @app.post("/asr", tags=["Endpoints"])
 def asr(
